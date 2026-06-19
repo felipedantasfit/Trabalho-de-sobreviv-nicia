@@ -507,11 +507,106 @@ teste_variavel(tree, "SoilMyco", "gengamma")
 
 ## RETIRANDO UMA POR VEZ ##
 
-modelo_completo <- flexsurvreg(
-  Surv(Time, Event) ~ Species + Soil + Sterile + Conspecific + Myco + SoilMyco,
+# DETALHE IMPORTANTE #
+
+table(tree$Species, tree$Myco)
+
+table(tree$Soil, tree$SoilMyco)
+
+table(tree$Sterile, tree$Conspecific)
+
+xtabs(~ Species + Soil + Conspecific, data = tree)
+
+# Ao fazer essa tabela acima fica claro que algumas variáveis são dependentes de
+# outras, portanto elas não serão consideradas no modelo.
+
+tree <- tree |>
+  dplyr::filter(
+    !is.na(Time),
+    !is.na(Event),
+    !is.na(Species),
+    !is.na(Soil)
+  )
+
+modelo_completo <- survreg(
+  Surv(Time, Event) ~ Species + Soil + Light_Cat,
+  data = tree,
+  dist = "loglogistic"
+)
+
+modelo_completo
+
+modelo_sem_species <- flexsurvreg(
+  Surv(Time, Event) ~ Soil,
   data = tree,
   dist = "gengamma"
 )
 
+modelo_sem_soil <- flexsurvreg(
+  Surv(Time, Event) ~ Species,
+  data = tree,
+  dist = "gengamma"
+)
+
+# TESTE TRV #
+
+teste_TRV <- function(modelo_reduzido, modelo_completo){
+  
+  LR <- 2 * (modelo_completo$loglik - modelo_reduzido$loglik)
+  
+  gl <- modelo_completo$npars - modelo_reduzido$npars
+  
+  p <- pchisq(LR, gl, lower.tail = FALSE)
+  
+  data.frame(
+    TRV = LR,
+    gl = gl,
+    p.valor = p
+  )
+}
+
+teste_TRV(modelo_sem_species, modelo_completo)
+
+teste_TRV(modelo_sem_soil, modelo_completo)
+
+# o modelo completo é o melhor.
+
+## INTERPRETACAO DE COEFICIENTES ##
+
+# O modelo paramétrico Gama Generalizada indicou que tanto a espécie da muda quanto
+# a origem do solo influenciaram significativamente o tempo de sobrevivência. 
+# Considerando Acer saccharum como categoria de referência, observou-se que as 
+# espécies Quercus alba e Quercus rubra apresentaram maiores tempos de 
+# sobrevivência, enquanto Prunus serotina não diferiu significativamente da 
+# espécie de referência. Em relação à origem do solo, tomando Acer rubrum como 
+# referência, verificou-se redução do tempo de sobrevivência para mudas cultivadas
+# em solos provenientes de Prunus serotina e Quercus alba. Os demais tipos de solo
+# não apresentaram diferenças estatisticamente significativas.
+
 ## COX SNELL ##
+
+predlin <- modelo_completo$linear.predictors
+sigma <- modelo_completo$scale
+
+S_hat <- 1 / (1 + exp((log(tree$Time) - predlin)/sigma))
+
+EI <- -log(S_hat)
+
+kmEI <- survfit(Surv(EI, tree$Event) ~ 1, conf.int = FALSE)
+
+tempoEI <- kmEI$time
+sEI <- kmEI$surv
+sExp <- exp(-tempoEI)
+
+plot(kmEI,
+     conf.int = FALSE,
+     xlab = "Resíduos de Cox-Snell",
+     ylab = "Sobrevivência")
+
+lines(tempoEI, sExp,
+      col = 2,
+      lty = 2,
+      lwd = 2)
+
+AIC(modelo_completo)
 
